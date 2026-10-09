@@ -21,6 +21,11 @@ RUN dpkg --add-architecture i386 && \
     curl ca-certificates \
     supervisor \
     procps \
+    novnc \
+    websockify \
+    python3-websockify \
+    && mkdir -p /usr/share/novnc \
+    && if [ -d /usr/share/novnc/static ]; then echo "noVNC files already present"; else cp -r /usr/share/doc/novnc/static /usr/share/novnc/ 2>/dev/null || curl -L -o /tmp/novnc.tar.gz https://github.com/novnc/noVNC/archive/v1.4.0.tar.gz && cd /tmp && tar -xzf novnc.tar.gz && cp -r noVNC-1.4.0/* /usr/share/novnc/ && rm -rf /tmp/novnc*; fi \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up VNC directories and password
@@ -31,7 +36,8 @@ RUN chmod +x /opt/create_vnc_password.py && \
     echo "set password-file=/root/.vnc/passwd" > /root/.vnc/config && \
     echo "set geometry=1920x1080" >> /root/.vnc/config && \
     echo "set depth=24" >> /root/.vnc/config && \
-    echo "set alwaysshared" >> /root/.vnc/config
+    echo "set alwaysshared" >> /root/.vnc/config && \
+    echo "set SecurityTypes VncAuth" >> /root/.vnc/config
 
 # Configure VNC startup script
 COPY start-vnc.sh /start-vnc.sh
@@ -72,7 +78,8 @@ EOF
 RUN chmod +x /usr/local/bin/healthcheck.sh
 
 # Supervisor config to run VNC and desktop
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+# (No supervisor - using direct bash startup instead for reliability)
+# COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Set up Python virtual environment and install requirements
 RUN python3 -m venv /opt/venv && \

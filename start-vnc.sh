@@ -19,8 +19,12 @@ sleep 1
 # Clean lock files
 rm -f /tmp/.X1-lock /tmp/.X0-lock 2>/dev/null || true
 
-# Start TigerVNC server on display :1 (port 5901)
-vncserver :1 -depth 24 -geometry 1920x1080 -localhost no
+# Remove config file to avoid TLS settings from previous sessions
+rm -f /root/.vnc/config
+
+# Start TigerVNC server on display :1 (port 5901) with plain VNC auth only (no TLS)
+# This avoids 502 errors when accessed through proxies
+vncserver :1 -depth 24 -geometry 1920x1080 -localhost no -SecurityTypes VncAuth
 
 # Wait for VNC to start
 sleep 3
@@ -32,6 +36,7 @@ if pgrep -f "X vnc" > /dev/null; then
     echo "Connect using VNC client:"
     echo "  Host: localhost:5901"
     echo "  Password: vncpass"
+    echo "  Security: VNC Auth (no TLS)"
     echo ""
     echo "Desktop: Xfce"
     echo "Tally Prime: Run 'wine /opt/TallyPrime/Tally.exe'"

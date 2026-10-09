@@ -7,6 +7,7 @@ services:
     hostname: tally-vnc
     ports:
       - "5901:5901"
+      - "5902:5902"
     volumes:
       - tally-data:/root
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -37,25 +38,24 @@ services:
           git checkout -B main origin/main 2>/dev/null || git checkout -b main
         fi
 
-        # Start supervisord in background to keep container alive
-        echo "Starting supervisor daemon..."
-        /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+        # Start VNC server in background
+        echo "Starting VNC server..."
+        /start-vnc.sh &
+        VNC_PID=$!
 
-        # Wait for VNC to be ready
-        echo "Waiting for VNC server to be ready..."
-        for i in $(seq 1 30); do
-          if pgrep -f "X vnc" > /dev/null 2>&1; then
-            echo "✓ VNC server is running on port 5901"
-            break
-          fi
-          sleep 1
-        done
+        sleep 5
 
-        # Install Tally Prime if installer is available
-        if [ -f /opt/tally-installer.tar.gz ] || [ -n "$TALLY_URL" ]; then
-          echo "Installing Tally Prime..."
-          /opt/install-tally.sh || echo "Tally install skipped or failed"
-        fi
+        # Start websockify for web-based VNC access (fixes 502 errors)
+        echo "Starting websockify for web access..."
+        /usr/bin/websockify --web=/usr/share/novnc 0.0.0.0:5902 127.0.0.1:5901 &
+        SOCK_PID=$!
+
+        sleep 2
+
+        # Start git-sync in background
+        echo "Starting git-sync..."
+        /usr/local/bin/git-sync watch 60 &
+        GIT_PID=$!
 
         echo ""
         echo "=========================================="
@@ -63,18 +63,26 @@ services:
         echo "=========================================="
         echo "  VNC Connect: localhost:5901"
         echo "  Password: vncpass"
+        echo "  Web VNC: http://localhost:5902/vnc.html"
         echo "  Tally: wine /opt/TallyPrime/Tally.exe"
         echo "  Python: /opt/venv/bin/python"
         echo "=========================================="
         echo ""
 
-        # Keep container alive - monitor supervisord
-        while kill -0 $(cat /var/run/supervisord.pid 2>/dev/null) 2>/dev/null; do
+        # Monitor loop - restart services if they crash
+        while true; do
+          if ! kill -0 $VNC_PID 2>/dev/null; then
+            echo "[$(date)] VNC crashed, restarting..."
+            /start-vnc.sh &
+            VNC_PID=$!
+          fi
+          if ! kill -0 $SOCK_PID 2>/dev/null; then
+            echo "[$(date)] websockify crashed, restarting..."
+            /usr/bin/websockify --web=/usr/share/novnc 0.0.0.0:5902 127.0.0.1:5901 &
+            SOCK_PID=$!
+          fi
           sleep 10
         done
-
-        echo "Supervisord stopped, restarting..."
-        exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
 
 volumes:
   tally-data:
