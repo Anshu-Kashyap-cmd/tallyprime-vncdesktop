@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  tally-vnc:
+    build: .
+    container_name: tallyprime-vnc-desktop
+    hostname: tally-vnc
+    ports:
+      - "5901:5901"
+    volumes:
+      - tally-data:/root
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DISPLAY=:1
+      - VNC_PASSWORD=vncpass
+      - AI_LOG_FILE=/root/ailog.md
+      - GIT_REMOTE=origin
+      - GIT_BRANCH=main
+      - GIT_REPO_URL=${GIT_REPO_URL:-}
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+    restart: unless-stopped
+    entrypoint: /bin/bash
+    command:
+      - -lc
+      - |
+        set -e
+
+        echo "=== Tally Prime VNC Desktop Starting ==="
+
+        # Configure git remote if provided
+        if [ -n "$GIT_REPO_URL" ]; then
+          echo "Configuring git remote..."
+          git remote add origin "$GIT_REPO_URL" 2>/dev/null || true
+          git fetch origin 2>/dev/null || true
+          git checkout -B main origin/main 2>/dev/null || git checkout -b main
+        fi
+
+        # Start supervisord in background to keep container alive
+        echo "Starting supervisor daemon..."
+        /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+
+        # Wait for VNC to be ready
+        echo "Waiting for VNC server to be ready..."
+        for i in $(seq 1 30); do
+          if pgrep -f "X vnc" > /dev/null 2>&1; then
+            echo "✓ VNC server is running on port 5901"
+            break
+          fi
+          sleep 1
+        done
+
+        # Install Tally Prime if installer is available
+        if [ -f /opt/tally-installer.tar.gz ] || [ -n "$TALLY_URL" ]; then
+          echo "Installing Tally Prime..."
+          /opt/install-tally.sh || echo "Tally install skipped or failed"
+        fi
+
+        echo ""
+        echo "=========================================="
+        echo "  Tally Prime DevContainer is READY!"
+        echo "=========================================="
+        echo "  VNC Connect: localhost:5901"
+        echo "  Password: vncpass"
+        echo "  Tally: wine /opt/TallyPrime/Tally.exe"
+        echo "  Python: /opt/venv/bin/python"
+        echo "=========================================="
+        echo ""
+
+        # Keep container alive - monitor supervisord
+        while kill -0 $(cat /var/run/supervisord.pid 2>/dev/null) 2>/dev/null; do
+          sleep 10
+        done
+
+        echo "Supervisord stopped, restarting..."
+        exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+
+volumes:
+  tally-data:

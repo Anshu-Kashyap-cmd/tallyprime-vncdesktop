@@ -1,0 +1,6 @@
+# Python requirements for Tally Prime automation
+requests
+pandas
+openpyxl
+python-dotenv
+cryptography
